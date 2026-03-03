@@ -1,0 +1,27 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Wallet {
+  id           String        @id @default(uuid())
+  name         String
+  balance      Float         @default(0.0)
+  date         DateTime      @default(now())
+  transactions Transaction[]
+}
+
+model Transaction {
+  id          String   @id @default(uuid())
+  walletId    String
+  amount      Float
+  balance     Float
+  description String
+  date        DateTime @default(now())
+  type        String // CREDIT or DEBIT
+  wallet      Wallet   @relation(fields: [walletId], references: [id])
+}
