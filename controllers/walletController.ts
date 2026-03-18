@@ -1,14 +1,11 @@
-import { Response } from "express";
+import { Request, Response } from "express";
 import { PrismaClient } from "@prisma/client";
 import {
   TRANSACTION_TYPES,
   DEFAULT_SETUP_DESCRIPTION,
   PAGINATION_DEFAULTS,
   ERROR_MESSAGES,
-  EVENTS,
 } from "../constants.js";
-import { AuthenticatedRequest } from "../middleware/auth.js";
-import { enqueueEventForUser } from "../services/webhookService.js";
 
 const prisma = new PrismaClient();
 
@@ -35,7 +32,7 @@ interface GetTransactionsQuery {
 }
 
 export const setupWallet = async (
-  req: AuthenticatedRequest & { body: SetupWalletBody },
+  req: Request<object, object, SetupWalletBody>,
   res: Response
 ): Promise<void> => {
   const { name, balance } = req.body;
@@ -43,11 +40,7 @@ export const setupWallet = async (
   try {
     const result = await prisma.$transaction(async (tx) => {
       const wallet = await tx.wallet.create({
-        data: {
-          name,
-          balance,
-          userId: req.user!.userId,
-        },
+        data: { name, balance },
       });
 
       const firstTransaction = await tx.transaction.create({
@@ -80,7 +73,7 @@ export const setupWallet = async (
 };
 
 export const createTransaction = async (
-  req: AuthenticatedRequest & { params: { walletId: string }; body: CreateTransactionBody },
+  req: Request<{ walletId: string }, object, CreateTransactionBody>,
   res: Response
 ): Promise<void> => {
   const { walletId } = req.params;
@@ -99,11 +92,6 @@ export const createTransaction = async (
 
       if (!wallet) {
         throw new Error(ERROR_MESSAGES.WALLET_NOT_FOUND);
-      }
-
-      if (wallet.userId !== req.user!.userId && req.user!.role !== "ADMIN") {
-        res.status(403).json({ message: ERROR_MESSAGES.FORBIDDEN });
-        return;
       }
 
       const updatedWallet = await tx.wallet.update({
@@ -126,16 +114,6 @@ export const createTransaction = async (
       return { updatedWallet, transaction };
     });
 
-    // fire-and-forget enqueue of webhook events (no await to avoid delaying response)
-    void enqueueEventForUser(req.user!.userId, EVENTS.TRANSACTION_CREATED, {
-      walletId,
-      transactionId: result.transaction.id,
-      amount,
-      description,
-      balance: result.updatedWallet.balance,
-      type: amount > 0 ? TRANSACTION_TYPES.CREDIT : TRANSACTION_TYPES.DEBIT,
-    });
-
     res.status(200).json({
       balance: toDecimalString(result.updatedWallet.balance),
       transactionId: result.transaction.id,
@@ -151,7 +129,7 @@ export const createTransaction = async (
 };
 
 export const getTransactions = async (
-  req: AuthenticatedRequest & { query: GetTransactionsQuery },
+  req: Request<object, object, object, GetTransactionsQuery>,
   res: Response
 ): Promise<void> => {
   const {
@@ -196,7 +174,7 @@ export const getTransactions = async (
 };
 
 export const getWallet = async (
-  req: AuthenticatedRequest & { params: { id: string } },
+  req: Request<{ id: string }>,
   res: Response
 ): Promise<void> => {
   const { id } = req.params;
@@ -208,11 +186,6 @@ export const getWallet = async (
 
     if (!wallet) {
       res.status(404).json({ message: ERROR_MESSAGES.WALLET_NOT_FOUND });
-      return;
-    }
-
-    if (wallet.userId !== req.user!.userId && req.user!.role !== "ADMIN") {
-      res.status(403).json({ message: ERROR_MESSAGES.FORBIDDEN });
       return;
     }
 
